@@ -53,17 +53,18 @@ describe('ExpressAdapter', () => {
       { prefix: '/api/', path: '/api' },
       { prefix: 'api/v1/', path: '/api/v1' },
     ])(
-      'should mount the not-found handler at $path for prefix $prefix',
+      'should mount the not-found handler at $path and the root for prefix $prefix',
       ({ prefix, path }) => {
         const expressInstance = expressAdapter.getInstance();
         const useSpy = vi.spyOn(expressInstance, 'use');
 
         expressAdapter.setNotFoundHandler(vi.fn(), prefix);
 
-        expect(useSpy).toHaveBeenCalledExactlyOnceWith(
-          path,
-          expect.any(Function),
-        );
+        // The root mount is what lets a path outside the prefix reach the
+        // exception layer, the same way `setErrorHandler` does it above.
+        expect(useSpy).toHaveBeenCalledTimes(2);
+        expect(useSpy).toHaveBeenCalledWith(path, expect.any(Function));
+        expect(useSpy).toHaveBeenCalledWith(expect.any(Function));
       },
     );
 

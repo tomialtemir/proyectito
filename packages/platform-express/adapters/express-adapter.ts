@@ -173,32 +173,42 @@ export class ExpressAdapter extends AbstractHttpAdapter<
       this.registeredPrefixes.add(normalizedPrefix);
       const router = express.Router();
       router.all('*path', handler as any);
-      return this.use(normalizedPrefix, router);
+      this.use(normalizedPrefix, router);
     }
-    return this.use(
-      (
-        req: express.Request,
-        res: express.Response,
-        next: express.NextFunction,
-      ) => {
-        // When multiple apps share this adapter, a non-prefixed app's 404
-        // handler may be registered before a prefixed app's routes. Skip
-        // requests whose path belongs to another app's prefix so they can
-        // reach the correct route handlers further in the stack.
-        const path = req.originalUrl.split(/[?#]/)[0];
-        for (const registeredPrefix of this.registeredPrefixes) {
-          // Match on full path segments only, so a prefix of "/api" does not
-          // swallow unrelated paths such as "/apiary".
-          if (
-            path === registeredPrefix ||
-            path.startsWith(`${registeredPrefix}/`)
-          ) {
-            return next();
-          }
+    // Always mount the not-found handler at the root as well, mirroring
+    // `setErrorHandler`. Without it a request outside the global prefix - a
+    // "setGlobalPrefix" exclusion, or simply an unknown path - never reaches
+    // the exception layer and gets Express's own HTML 404 instead.
+    return this.use(this.createNotFoundFallback(handler));
+  }
+
+  /**
+   * A root-mounted not-found handler that leaves the prefixed routers alone.
+   *
+   * A request whose path belongs to a registered prefix is passed on: either a
+   * prefixed router further in the stack answers it, or - when several apps
+   * share this adapter - it belongs to another app whose routes are registered
+   * after this handler.
+   */
+  private createNotFoundFallback(handler: Function) {
+    return (
+      req: express.Request,
+      res: express.Response,
+      next: express.NextFunction,
+    ) => {
+      const path = req.originalUrl.split(/[?#]/)[0];
+      for (const registeredPrefix of this.registeredPrefixes) {
+        // Match on full path segments only, so a prefix of "/api" does not
+        // swallow unrelated paths such as "/apiary".
+        if (
+          path === registeredPrefix ||
+          path.startsWith(`${registeredPrefix}/`)
+        ) {
+          return next();
         }
-        return (handler as any)(req, res, next);
-      },
-    );
+      }
+      return (handler as any)(req, res, next);
+    };
   }
 
   public isHeadersSent(response: any): boolean {
